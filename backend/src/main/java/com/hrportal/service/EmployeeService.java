@@ -112,6 +112,9 @@ public class EmployeeService {
             }
             employee.setEmail(request.getEmail());
         }
+        if (request.getNewPassword() != null && !request.getNewPassword().isBlank()) {
+            employee.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        }
         if (request.getFirstName() != null) employee.setFirstName(request.getFirstName());
         if (request.getLastName() != null)  employee.setLastName(request.getLastName());
         if (request.getPhone() != null)     employee.setPhone(request.getPhone());

@@ -21,6 +21,7 @@
           <div class="form-group">
             <label>비밀번호 *</label>
             <input v-model="form.password" type="password" :class="{ error: fieldErrors.password }" required />
+            <span class="field-hint">8자 이상, 영문+숫자 포함</span>
             <span v-if="fieldErrors.password" class="field-error">{{ fieldErrors.password }}</span>
           </div>
           <div class="form-group">
@@ -129,10 +130,25 @@ const form = reactive({
   role: 'ROLE_USER'
 })
 
+function validatePassword(pw) {
+  if (!pw || pw.length < 8) return '비밀번호는 8자 이상이어야 합니다.'
+  if (!/[A-Za-z]/.test(pw)) return '비밀번호에 영문을 포함해야 합니다.'
+  if (!/\d/.test(pw)) return '비밀번호에 숫자를 포함해야 합니다.'
+  return ''
+}
+
 async function handleSubmit() {
   isLoading.value = true
   errorMessage.value = ''
   Object.keys(fieldErrors).forEach(k => delete fieldErrors[k])
+
+  const pwError = validatePassword(form.password)
+  if (pwError) {
+    fieldErrors.password = pwError
+    isLoading.value = false
+    return
+  }
+
   try {
     const res = await createEmployee({ ...form })
     const newEmp = res.data.data
@@ -153,4 +169,5 @@ async function handleSubmit() {
 .section-title { font-size: 15px; font-weight: 600; color: #374151; margin-bottom: 16px; }
 .form-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0 24px; }
 .divider { border: none; border-top: 1px solid #F3F4F6; margin: 20px 0; }
+.field-hint { font-size: 12px; color: #9CA3AF; margin-top: 4px; display: block; }
 </style>

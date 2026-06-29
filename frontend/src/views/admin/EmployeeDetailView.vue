@@ -155,6 +155,39 @@
         </div>
       </div>
 
+      <!-- 관리자 비밀번호 변경 섹션 -->
+      <div class="card" style="margin-bottom:24px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <h3 style="font-size:16px;font-weight:600;color:#111827;">비밀번호 변경 <span style="font-size:12px;color:#6B7280;font-weight:400;">(관리자 전용)</span></h3>
+          <div style="display:flex;gap:8px;">
+            <button v-if="!isEditingPw" class="btn btn-secondary" @click="isEditingPw = true">변경</button>
+            <template v-else>
+              <button class="btn btn-secondary" @click="cancelEditPw" :disabled="isSavingPw">취소</button>
+              <button class="btn btn-primary" @click="handleSavePw" :disabled="isSavingPw">
+                <span v-if="isSavingPw" class="spinner" style="width:14px;height:14px;margin-right:6px;"></span>
+                {{ isSavingPw ? '저장 중...' : '저장' }}
+              </button>
+            </template>
+          </div>
+        </div>
+        <template v-if="isEditingPw">
+          <div class="form-grid" style="max-width:480px;">
+            <div class="form-group">
+              <label>새 비밀번호</label>
+              <input v-model="pwForm.newPassword" type="password" :class="{ error: pwFieldErrors.newPassword }" placeholder="8자 이상, 영문+숫자 포함" />
+              <span class="field-hint">8자 이상, 영문+숫자 포함</span>
+              <span v-if="pwFieldErrors.newPassword" class="field-error">{{ pwFieldErrors.newPassword }}</span>
+            </div>
+            <div class="form-group">
+              <label>새 비밀번호 확인</label>
+              <input v-model="pwForm.confirmPassword" type="password" :class="{ error: pwFieldErrors.confirmPassword }" placeholder="비밀번호를 다시 입력하세요" />
+              <span v-if="pwFieldErrors.confirmPassword" class="field-error">{{ pwFieldErrors.confirmPassword }}</span>
+            </div>
+          </div>
+        </template>
+        <p v-else style="font-size:14px;color:#9CA3AF;">변경 버튼을 눌러 직원의 비밀번호를 재설정할 수 있습니다.</p>
+      </div>
+
       <div class="card" style="padding:0;overflow:hidden;">
         <div style="padding:20px 24px;border-bottom:1px solid #E5E7EB;">
           <h3 style="font-size:16px;font-weight:600;color:#111827;">Background Check 이력</h3>
@@ -226,6 +259,12 @@ const isSavingInfo = ref(false)
 const infoForm = reactive({ firstName: '', lastName: '', email: '', phone: '', department: '', position: '', dateOfBirth: '', hireDate: '' })
 const infoFieldErrors = reactive({})
 
+// 비밀번호 변경
+const isEditingPw = ref(false)
+const isSavingPw = ref(false)
+const pwForm = reactive({ newPassword: '', confirmPassword: '' })
+const pwFieldErrors = reactive({})
+
 onMounted(async () => {
   await Promise.all([loadEmployee(), loadBackgroundChecks()])
 })
@@ -265,6 +304,41 @@ function cancelEditInfo() {
   syncInfoForm()
   Object.keys(infoFieldErrors).forEach(k => delete infoFieldErrors[k])
   isEditingInfo.value = false
+}
+
+function cancelEditPw() {
+  pwForm.newPassword = ''
+  pwForm.confirmPassword = ''
+  Object.keys(pwFieldErrors).forEach(k => delete pwFieldErrors[k])
+  isEditingPw.value = false
+}
+
+function validatePassword(pw) {
+  if (!pw || pw.length < 8) return '비밀번호는 8자 이상이어야 합니다.'
+  if (!/[A-Za-z]/.test(pw)) return '영문을 포함해야 합니다.'
+  if (!/\d/.test(pw)) return '숫자를 포함해야 합니다.'
+  return ''
+}
+
+async function handleSavePw() {
+  Object.keys(pwFieldErrors).forEach(k => delete pwFieldErrors[k])
+  const pwError = validatePassword(pwForm.newPassword)
+  if (pwError) { pwFieldErrors.newPassword = pwError; return }
+  if (pwForm.newPassword !== pwForm.confirmPassword) {
+    pwFieldErrors.confirmPassword = '비밀번호가 일치하지 않습니다.'
+    return
+  }
+  isSavingPw.value = true
+  try {
+    await updateEmployee(employeeId, { newPassword: pwForm.newPassword })
+    cancelEditPw()
+    setMessage('비밀번호가 변경되었습니다.', 'success')
+  } catch (err) {
+    const errData = err?.response?.data?.error
+    pwFieldErrors.newPassword = errData?.message || '비밀번호 변경에 실패했습니다.'
+  } finally {
+    isSavingPw.value = false
+  }
 }
 
 async function handleSaveInfo() {
@@ -414,4 +488,5 @@ function formatDate(dateStr) {
   color: #6B7280;
   cursor: default;
 }
+.field-hint { font-size: 12px; color: #9CA3AF; margin-top: 4px; display: block; }
 </style>
