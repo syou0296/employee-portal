@@ -1,0 +1,40 @@
+server:
+  port: 8080
+
+spring:
+  # WebFlux(WebClient)와 MVC(Tomcat) 공존 시 반드시 servlet 명시
+  main:
+    web-application-type: servlet
+
+  datasource:
+    url: jdbc:h2:mem:hrportal;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  # LocalDate 직렬화/역직렬화 설정
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+jwt:
+  secret: myVeryLongSecretKey123456789012345678901234567890
+  expiration: 86400000
+
+background-check:
+  base-url: https://54capvm12g.execute-api.ap-northeast-2.amazonaws.com
+  timeout-seconds: 30
