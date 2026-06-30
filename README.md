@@ -28,8 +28,8 @@
 
 | 포털 | 대상 | 주요 기능 |
 |------|------|-----------|
-| User Portal | 일반 직원 (ROLE_USER) | 로그인, 자신의 인적사항 조회·수정 |
-| Admin Dashboard | 관리자 (ROLE_ADMIN) | 직원 계정 생성, 목록·상세 조회, 퇴사 처리, Background Check 연동 |
+| User Portal | 일반 직원 (ROLE_USER) | 로그인, 자신의 인적사항 조회·수정, 비밀번호 변경 |
+| Admin Dashboard | 관리자 (ROLE_ADMIN) | 직원 계정 생성·수정, 목록·상세 조회, 퇴사 처리, Background Check 연동 |
 
 ```
 외부 Background Check API (AWS API Gateway)
@@ -114,13 +114,17 @@ hr-portal/
 │       │   ├── request/
 │       │   │   ├── LoginRequest.java
 │       │   │   ├── CreateEmployeeRequest.java
-│       │   │   └── UpdateProfileRequest.java
+│       │   │   ├── UpdateEmployeeRequest.java
+│       │   │   ├── UpdateProfileRequest.java
+│       │   │   ├── ChangePasswordRequest.java
+│       │   │   └── ForgotPasswordRequest.java
 │       │   └── response/
 │       │       ├── ApiResponse.java
 │       │       ├── ErrorResponse.java
 │       │       ├── LoginResponse.java
 │       │       ├── EmployeeResponse.java
-│       │       └── EmployeeSummaryResponse.java
+│       │       ├── EmployeeSummaryResponse.java
+│       │       └── ForgotPasswordResponse.java
 │       ├── exception/
 │       │   ├── GlobalExceptionHandler.java
 │       │   ├── BusinessException.java
@@ -130,6 +134,9 @@ hr-portal/
 │       ├── security/
 │       │   ├── JwtTokenProvider.java
 │       │   ├── JwtAuthenticationFilter.java
+│       │   ├── JwtAuthenticationEntryPoint.java
+│       │   ├── JwtAccessDeniedHandler.java
+│       │   ├── CustomUserDetails.java
 │       │   └── CustomUserDetailsService.java
 │       └── service/
 │           ├── AuthService.java
@@ -147,6 +154,9 @@ hr-portal/
         │   ├── auth.js
         │   ├── user.js
         │   └── admin.js
+        ├── components/
+        │   ├── SearchBox.vue         # 직원 검색 컴포넌트 (debounce)
+        │   └── Pagination.vue        # 페이지네이션 컴포넌트
         ├── router/
         │   └── index.js
         ├── stores/
@@ -259,7 +269,7 @@ JwtAuthenticationFilter
   "success": false,
   "error": {
     "code": "EMPLOYEE_NOT_FOUND",
-    "message": "Employee not found: EMP-2024-999",
+    "message": "직원을 찾을 수 없습니다.",
     "status": 404
   }
 }
@@ -270,6 +280,7 @@ JwtAuthenticationFilter
 | Method | Path | 인증 | 설명 |
 |--------|------|------|------|
 | POST | `/api/auth/login` | 없음 | 로그인, JWT 발급 |
+| POST | `/api/auth/forgot-password` | 없음 | 임시 비밀번호 발급 |
 
 **POST /api/auth/login**
 ```json
@@ -289,12 +300,38 @@ JwtAuthenticationFilter
 }
 ```
 
+**POST /api/auth/forgot-password**
+```json
+// Request
+{ "username": "john.doe", "dateOfBirth": "1990-01-01" }
+
+// Response 200
+{
+  "success": true,
+  "data": {
+    "temporaryPassword": "Abc1@xyz9",
+    "message": "임시 비밀번호가 발급되었습니다. 로그인 후 반드시 비밀번호를 변경해주세요."
+  }
+}
+```
+
 ### User Portal API
 
 | Method | Path | 인증 | 설명 |
 |--------|------|------|------|
 | GET | `/api/me` | ROLE_USER | 본인 인적사항 조회 |
-| PUT | `/api/me` | ROLE_USER | 본인 인적사항 수정 |
+| PUT | `/api/me` | ROLE_USER | 본인 인적사항 수정 (전화번호) |
+| PUT | `/api/me/password` | ROLE_USER | 본인 비밀번호 변경 |
+
+**PUT /api/me/password**
+```json
+// Request
+{
+  "currentPassword": "oldPass1!",
+  "newPassword": "newPass1!",
+  "confirmPassword": "newPass1!"
+}
+```
 
 ### Admin Dashboard API
 
@@ -303,10 +340,11 @@ JwtAuthenticationFilter
 | POST | `/api/admin/employees` | ROLE_ADMIN | 직원 계정 생성 |
 | GET | `/api/admin/employees` | ROLE_ADMIN | 직원 목록 조회 |
 | GET | `/api/admin/employees/{employeeId}` | ROLE_ADMIN | 직원 상세 조회 |
+| PUT | `/api/admin/employees/{employeeId}` | ROLE_ADMIN | 직원 정보 수정 |
 | PUT | `/api/admin/employees/{employeeId}/terminate` | ROLE_ADMIN | 퇴사 처리 |
 | POST | `/api/admin/employees/{employeeId}/background-checks` | ROLE_ADMIN | Background Check 요청 |
 | GET | `/api/admin/employees/{employeeId}/background-checks` | ROLE_ADMIN | Background Check 목록 조회 |
-| GET | `/api/admin/background-checks/{checkId}` | ROLE_ADMIN | Background Check 결과 조회 |
+| GET | `/api/admin/employees/{employeeId}/background-checks/{checkId}` | ROLE_ADMIN | Background Check 결과 조회 |
 
 ---
 
@@ -334,39 +372,45 @@ JwtAuthenticationFilter
 
 ```java
 // 비즈니스 오류
-EMPLOYEE_NOT_FOUND          (404, "직원을 찾을 수 없습니다.")
-EMPLOYEE_ALREADY_TERMINATED (400, "이미 퇴사 처리된 직원입니다.")
-DUPLICATE_USERNAME          (409, "이미 사용 중인 아이디입니다.")
-DUPLICATE_EMAIL             (409, "이미 사용 중인 이메일입니다.")
+EMPLOYEE_NOT_FOUND               (404, "직원을 찾을 수 없습니다.")
+EMPLOYEE_ALREADY_TERMINATED      (400, "이미 퇴사 처리된 직원입니다.")
+DUPLICATE_USERNAME               (409, "이미 사용 중인 아이디입니다.")
+DUPLICATE_EMAIL                  (409, "이미 사용 중인 이메일입니다.")
 
 // 인증/인가
-INVALID_CREDENTIALS         (401, "아이디 또는 비밀번호가 올바르지 않습니다.")
-TOKEN_EXPIRED               (401, "인증 토큰이 만료되었습니다.")
-TOKEN_INVALID               (401, "유효하지 않은 인증 토큰입니다.")
-ACCOUNT_DISABLED            (401, "비활성화된 계정입니다.")
-ACCESS_DENIED               (403, "접근 권한이 없습니다.")
+INVALID_CREDENTIALS              (401, "아이디 또는 비밀번호가 올바르지 않습니다.")
+TOKEN_EXPIRED                    (401, "인증 토큰이 만료되었습니다.")
+TOKEN_INVALID                    (401, "유효하지 않은 인증 토큰입니다.")
+ACCOUNT_DISABLED                 (401, "비활성화된 계정입니다. 관리자에게 문의하세요.")
+ACCESS_DENIED                    (403, "접근 권한이 없습니다.")
+
+// 비밀번호
+INVALID_CURRENT_PASSWORD         (400, "현재 비밀번호가 올바르지 않습니다.")
+PASSWORD_SAME_AS_CURRENT         (400, "새 비밀번호는 기존 비밀번호와 달라야 합니다.")
+PASSWORD_CONFIRM_MISMATCH        (400, "새 비밀번호와 확인 비밀번호가 일치하지 않습니다.")
+RESET_PASSWORD_VERIFICATION_FAILED (400, "아이디 또는 생년월일이 올바르지 않습니다.")
 
 // Validation
-VALIDATION_FAILED           (400, "입력값이 올바르지 않습니다.")
+VALIDATION_FAILED                (400, "입력값이 올바르지 않습니다.")
 
 // 외부 API
-BACKGROUND_CHECK_API_ERROR  (502, "Background Check API 오류가 발생했습니다.")
-BACKGROUND_CHECK_API_TIMEOUT(504, "Background Check API 응답 시간을 초과했습니다.")
-BACKGROUND_CHECK_NOT_FOUND  (404, "Background Check 결과를 찾을 수 없습니다.")
+BACKGROUND_CHECK_API_ERROR       (502, "Background Check API 오류가 발생했습니다.")
+BACKGROUND_CHECK_API_TIMEOUT     (504, "Background Check API 응답 시간을 초과했습니다.")
+BACKGROUND_CHECK_NOT_FOUND       (404, "Background Check 결과를 찾을 수 없습니다.")
 ```
 
 ### 7.3 GlobalExceptionHandler
 
 ```
 Exception 계층:
-  BusinessException            → ErrorCode 기반 응답 (4xx)
-  MethodArgumentNotValidException → VALIDATION_FAILED (400) + fieldErrors
-  DisabledException            → ACCOUNT_DISABLED (401)
-  BadCredentialsException      → INVALID_CREDENTIALS (401)
-  AccessDeniedException        → ACCESS_DENIED (403)
-  WebClientResponseException   → BACKGROUND_CHECK_API_ERROR (502)
-  WebClientRequestException    → BACKGROUND_CHECK_API_TIMEOUT (504)
-  Exception (catch-all)        → INTERNAL_SERVER_ERROR (500) + 로그
+  BusinessException                → ErrorCode 기반 응답 (4xx)
+  MethodArgumentNotValidException  → VALIDATION_FAILED (400) + fieldErrors
+  DisabledException                → ACCOUNT_DISABLED (401)
+  BadCredentialsException          → INVALID_CREDENTIALS (401)
+  AccessDeniedException            → ACCESS_DENIED (403)
+  WebClientResponseException       → BACKGROUND_CHECK_API_ERROR (502)
+  WebClientRequestException        → BACKGROUND_CHECK_API_TIMEOUT (504)
+  Exception (catch-all)            → INTERNAL_SERVER_ERROR (500) + 로그
 ```
 
 ### 7.4 JWT 인증/인가 실패 처리
@@ -385,7 +429,7 @@ JwtAccessDeniedHandler       →  403 JSON 응답  (권한 부족)
 ```
 BackgroundCheckService
   └── WebClient 호출
-       ├── .timeout(Duration.ofSeconds(10))       // 10초 Timeout
+       ├── .timeout(Duration.ofSeconds(30))       // 30초 Timeout
        ├── onStatus(4xx) → BusinessException(BACKGROUND_CHECK_API_ERROR)
        ├── onStatus(5xx) → BusinessException(BACKGROUND_CHECK_API_ERROR)
        └── TimeoutException → BusinessException(BACKGROUND_CHECK_API_TIMEOUT)
@@ -401,6 +445,20 @@ GlobalExceptionHandler
 
 프론트엔드는 `pending` 상태인 경우 5초 간격으로 최대 12회 폴링 후 포기.
 
+### 7.6 프론트엔드 에러 처리
+
+Axios interceptor가 `error.response.data.error` 객체를 직접 reject하므로, 모든 catch 블록에서 `err?.message`로 서버 ErrorCode 메시지를 참조한다.
+
+```javascript
+// axios.js interceptor
+return Promise.reject(error.response?.data?.error || error)
+
+// catch에서 사용
+} catch (err) {
+  errorMessage.value = err?.message || '네트워크 오류가 발생했습니다.'
+}
+```
+
 ---
 
 ## 8. Validation 전략
@@ -410,14 +468,23 @@ GlobalExceptionHandler
 ```java
 // CreateEmployeeRequest
 @NotBlank username
-@Size(min=8) password
+@Pattern(regexp="^(?=.*[A-Za-z])(?=.*\\d).{8,}$") password  // 8자 이상, 영문+숫자
 @NotBlank firstName / lastName
 @Email email
 @NotNull hireDate
+@NotNull role
 
-// UpdateProfileRequest (본인 수정 가능 필드만)
-@Email email (if present)
-@Pattern(regexp="...") phone (if present)
+// UpdateProfileRequest (본인 수정 가능 필드)
+phone (선택)
+
+// ChangePasswordRequest
+@NotBlank currentPassword
+@Size(min=8, max=20) @Pattern newPassword  // 영문+숫자+특수문자 각 1자 이상
+@NotBlank confirmPassword
+
+// ForgotPasswordRequest
+@NotBlank username
+@NotNull dateOfBirth
 ```
 
 `@Validated` + `MethodArgumentNotValidException` → `VALIDATION_FAILED` + fieldErrors 응답.
@@ -449,7 +516,7 @@ GlobalExceptionHandler
 2. Backend → External API: POST /background-checks
    {employeeId, firstName, lastName, dateOfBirth}
 3. 응답 status가 'pending'이면 checkId만 반환
-4. Frontend: 5초마다 GET /api/admin/background-checks/{checkId} 폴링
+4. Frontend: 5초마다 GET /api/admin/employees/{employeeId}/background-checks/{checkId} 폴링
 5. status가 clear/flagged → 폴링 종료, 결과 표시
 ```
 
@@ -461,13 +528,13 @@ public class BackgroundCheckService {
     private final WebClient webClient;  // timeout 설정 포함
 
     // POST → 외부 API 호출, 결과 반환
-    public BackgroundCheckCreatedDto requestCheck(Employee employee);
+    public Object requestCheck(Employee employee);
 
     // GET by checkId → 외부 API 호출
-    public BackgroundCheckResultDto getResult(String checkId);
+    public Object getCheckResult(String checkId);
 
     // GET by employeeId → 외부 API 호출
-    public BackgroundCheckListDto listByEmployee(String employeeId);
+    public Object listChecksByEmployee(String employeeId);
 }
 ```
 
@@ -479,7 +546,7 @@ WebClient.builder()
     .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
     .clientConnector(new ReactorClientHttpConnector(
         HttpClient.create()
-            .responseTimeout(Duration.ofSeconds(10))
+            .responseTimeout(Duration.ofSeconds(30))
     ))
     .build();
 ```
@@ -497,10 +564,10 @@ WebClient.builder()
   /profile               → ProfileView (ROLE_USER)
 
 /admin                   → AdminLayout
-  /admin/employees       → EmployeeListView (ROLE_ADMIN)
-  /admin/employees/new   → EmployeeCreateView (ROLE_ADMIN)
-  /admin/employees/:id   → EmployeeDetailView (ROLE_ADMIN)
-  /admin/background-checks/:checkId → BackgroundCheckView (ROLE_ADMIN)
+  /admin/employees                                    → EmployeeListView (ROLE_ADMIN)
+  /admin/employees/new                                → EmployeeCreateView (ROLE_ADMIN)
+  /admin/employees/:employeeId                        → EmployeeDetailView (ROLE_ADMIN)
+  /admin/employees/:employeeId/background-checks/:checkId → BackgroundCheckView (ROLE_ADMIN)
 ```
 
 **Navigation Guard:**
@@ -508,7 +575,10 @@ WebClient.builder()
 router.beforeEach((to, from) => {
   const auth = useAuthStore()
   if (to.meta.requiresAuth && !auth.isAuthenticated) return '/login'
-  if (to.meta.requiresAdmin && auth.role !== 'ROLE_ADMIN') return '/'
+  if (to.meta.requiresAdmin && !auth.isAdmin) return '/profile'
+  if (to.path === '/login' && auth.isAuthenticated) {
+    return auth.isAdmin ? '/admin/employees' : '/profile'
+  }
 })
 ```
 
@@ -527,9 +597,16 @@ state: {
 
 ```
 Request  interceptor → Authorization: Bearer <token> 자동 주입
-Response interceptor → 401 수신 시 로그아웃 + /login 리다이렉트
+Response interceptor → 401 수신 시 로그아웃 + /login 리다이렉트 (/auth/login 제외)
                      → 에러 응답 → error.response.data.error 추출하여 reject
 ```
+
+### 직원 목록 기능 (EmployeeListView)
+
+- **검색**: `SearchBox` 컴포넌트로 직원 ID / 이름 실시간 검색 (debounce 250ms)
+- **상태 필터**: 전체 / 재직 중 / 퇴사 탭, 탭별 인원 수 배지 표시
+- **페이지네이션**: `Pagination` 컴포넌트, 10명 초과 시 자동 페이지 분할
+- **빈 상태**: 검색 결과 없을 때 안내 메시지 표시
 
 ---
 
@@ -539,12 +616,12 @@ Response interceptor → 401 수신 시 로그아웃 + /login 리다이렉트
 1. Backend
    1-1. 프로젝트 셋업 (pom.xml, application.yml)
    1-2. Domain / Entity / Repository
-   1-3. JWT (Provider, Filter, Entry/AccessDeniedHandler)
+   1-3. JWT (Provider, Filter, EntryPoint, AccessDeniedHandler)
    1-4. SecurityConfig
    1-5. 공통 응답 / ErrorCode / GlobalExceptionHandler
-   1-6. AuthService + AuthController
-   1-7. EmployeeService + UserController
-   1-8. EmployeeService(Admin) + AdminController
+   1-6. AuthService + AuthController (로그인, 임시 비밀번호 발급)
+   1-7. EmployeeService + UserController (조회, 프로필 수정, 비밀번호 변경)
+   1-8. EmployeeService(Admin) + AdminController (직원 CRUD, 퇴사 처리)
    1-9. BackgroundCheckService + AdminController 연동
    1-10. DataInitializer (관리자 계정 초기 데이터)
 
@@ -552,12 +629,13 @@ Response interceptor → 401 수신 시 로그아웃 + /login 리다이렉트
    2-1. 프로젝트 셋업 (Vite, Pinia, Router)
    2-2. Axios 인스턴스 + 인터셉터
    2-3. Auth Store + Router Guard
-   2-4. LoginView
-   2-5. User: ProfileView (조회/수정)
-   2-6. Admin: EmployeeListView
-   2-7. Admin: EmployeeCreateView
-   2-8. Admin: EmployeeDetailView + 퇴사 처리
-   2-9. Admin: BackgroundCheckView + 폴링
+   2-4. LoginView (로그인 + 임시 비밀번호 발급 모달)
+   2-5. User: ProfileView (조회/수정/비밀번호 변경)
+   2-6. SearchBox / Pagination 공통 컴포넌트
+   2-7. Admin: EmployeeListView (검색, 상태 필터, 페이지네이션)
+   2-8. Admin: EmployeeCreateView
+   2-9. Admin: EmployeeDetailView + 퇴사 처리 + 직원 정보 수정
+   2-10. Admin: BackgroundCheckView + 폴링
 ```
 
 ---
