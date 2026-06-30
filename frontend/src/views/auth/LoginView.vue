@@ -225,7 +225,7 @@ async function handleLogin() {
     touched.password = false
     errors.username = ''
     errors.password = ''
-    showAlert('로그인 실패', err?.response?.data?.error?.message || '아이디 또는 비밀번호가 올바르지 않습니다.', 'error')
+    showAlert('로그인 실패', err?.message || '아이디 또는 비밀번호가 올바르지 않습니다.', 'error')
   } finally {
     isLoading.value = false
   }
@@ -258,7 +258,7 @@ async function handleForgotPassword() {
     })
     forgotModal.result = res.data.data
   } catch (err) {
-    forgotModal.errorMessage = err?.response?.data?.error?.message || '인증에 실패했습니다.'
+    forgotModal.errorMessage = err?.message || '인증에 실패했습니다.'
   } finally {
     forgotModal.isLoading = false
   }

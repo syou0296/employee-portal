@@ -231,7 +231,7 @@
       </div>
     </template>
 
-    <div v-else-if="!isLoading" class="alert alert-error">직원 정보를 불러올 수 없습니다.</div>
+    <div v-else-if="!isLoading" class="alert alert-error">{{ loadError || '직원 정보를 불러올 수 없습니다.' }}</div>
   </div>
 </template>
 
@@ -250,6 +250,7 @@ const isLoading = ref(false)
 const isLoadingChecks = ref(false)
 const isTerminating = ref(false)
 const isRequestingBgCheck = ref(false)
+const loadError = ref('')
 const actionMessage = ref('')
 const actionMessageType = ref('success')
 
@@ -276,7 +277,7 @@ async function loadEmployee() {
     employee.value = res.data.data
     syncInfoForm()
   } catch (err) {
-    setMessage(err?.message || '직원 정보를 불러오는 데 실패했습니다.', 'error')
+    loadError.value = err?.message || '직원 정보를 불러오는 데 실패했습니다.'
   } finally {
     isLoading.value = false
   }
@@ -334,8 +335,7 @@ async function handleSavePw() {
     cancelEditPw()
     setMessage('비밀번호가 변경되었습니다.', 'success')
   } catch (err) {
-    const errData = err?.response?.data?.error
-    pwFieldErrors.newPassword = errData?.message || '비밀번호 변경에 실패했습니다.'
+    pwFieldErrors.newPassword = err?.message || '비밀번호 변경에 실패했습니다.'
   } finally {
     isSavingPw.value = false
   }
@@ -364,11 +364,10 @@ async function handleSaveInfo() {
     isEditingInfo.value = false
     setMessage('직원 정보가 수정되었습니다.', 'success')
   } catch (err) {
-    const errData = err?.response?.data?.error
-    if (errData?.fieldErrors) {
-      errData.fieldErrors.forEach(fe => { infoFieldErrors[fe.field] = fe.message })
+    if (err?.fieldErrors) {
+      err.fieldErrors.forEach(fe => { infoFieldErrors[fe.field] = fe.message })
     } else {
-      setMessage(errData?.message || '수정에 실패했습니다.', 'error')
+      setMessage(err?.message || '수정에 실패했습니다.', 'error')
     }
   } finally {
     isSavingInfo.value = false
@@ -395,7 +394,7 @@ async function handleTerminate() {
     employee.value = res.data.data
     setMessage('퇴사 처리되었습니다.', 'success')
   } catch (err) {
-    setMessage(err?.response?.data?.error?.message || '퇴사 처리에 실패했습니다.', 'error')
+    setMessage(err?.message || '퇴사 처리에 실패했습니다.', 'error')
   } finally {
     isTerminating.value = false
   }
@@ -408,7 +407,7 @@ async function handleBgCheckRequest() {
     setMessage('Background Check가 요청되었습니다.', 'success')
     await loadBackgroundChecks()
   } catch (err) {
-    setMessage(err?.response?.data?.error?.message || 'Background Check 요청에 실패했습니다.', 'error')
+    setMessage(err?.message || 'Background Check 요청에 실패했습니다.', 'error')
   } finally {
     isRequestingBgCheck.value = false
   }
